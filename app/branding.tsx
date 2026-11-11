@@ -1,8 +1,8 @@
 'use client';
 import {useEffect,useState} from 'react';
 import {Check,Upload,ArrowRight,LoaderCircle} from 'lucide-react';
-type Brand={name:string;displayMode:string;hasLogo:boolean;version:string;documentId?:string};
-function logoUrl(brand:Brand){return `/api/branding?logo=1&v=${encodeURIComponent(brand.version)}${brand.documentId?'&document='+encodeURIComponent(brand.documentId):''}`}
+export type Brand={name:string;displayMode:string;hasLogo:boolean;version:string;documentId?:string};
+export function logoUrl(brand:Brand){return `/api/branding?logo=1&v=${encodeURIComponent(brand.version)}${brand.documentId?'&document='+encodeURIComponent(brand.documentId):''}`}
 const fallback:Brand={name:'بوابة الملفات',displayMode:'name',hasLogo:false,version:''};
 function updateBrowserBrand(brand:Brand){
  document.title=brand.name;
@@ -18,7 +18,7 @@ export function BrandMark({compact=false,brand}:{compact?:boolean;brand:Brand}){
  {brand.displayMode!=='logo'&&<span>{brand.name}</span>}
  </span>;
 }
-export function useBrand(documentId?:string){const [brand,setBrand]=useState<Brand>(fallback);useEffect(()=>{let active=true;const refresh=()=>fetch('/api/branding'+(documentId?'?document='+encodeURIComponent(documentId):''),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&active){const next=d as Brand;setBrand(next);updateBrowserBrand(next)}}).catch(()=>{});refresh();window.addEventListener('focus',refresh);const channel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('portal-branding'):null;if(channel)channel.onmessage=refresh;return()=>{active=false;window.removeEventListener('focus',refresh);channel?.close()}},[documentId]);return brand}
+export function useBrand(documentId?:string,initialBrand?:Brand){const [brand,setBrand]=useState<Brand>(initialBrand||fallback);useEffect(()=>{let active=true;const refresh=()=>fetch('/api/branding'+(documentId?'?document='+encodeURIComponent(documentId):''),{cache:'no-store'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&active){const next=d as Brand;setBrand(next);updateBrowserBrand(next)}}).catch(()=>{});refresh();window.addEventListener('focus',refresh);const channel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('portal-branding'):null;if(channel)channel.onmessage=refresh;return()=>{active=false;window.removeEventListener('focus',refresh);channel?.close()}},[documentId]);return brand}
 export default function BrandingSettings(){
  const [brand,setBrand]=useState<Brand>(fallback),[name,setName]=useState('بوابة الملفات'),[mode,setMode]=useState('name'),[file,setFile]=useState<File|null>(null),[preview,setPreview]=useState(''),[remove,setRemove]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  useEffect(()=>{fetch('/api/branding').then(async r=>{if(!r.ok)throw new Error('يرجى تسجيل الدخول لعرض الإعدادات');const d=await r.json() as Brand;setBrand(d);setName(d.name);setMode(d.displayMode)}).catch(e=>setError(e.message)).finally(()=>setLoading(false))},[]);
