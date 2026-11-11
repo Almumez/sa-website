@@ -1,2 +1,4 @@
 import Portal from './portal';
-export default function Home(){ return <Portal />; }
+import {requirePortalAdmin} from './portal-access';
+export const dynamic='force-dynamic';
+export default async function Home(){await requirePortalAdmin('/');return <Portal />;}

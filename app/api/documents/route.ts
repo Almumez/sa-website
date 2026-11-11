@@ -1,5 +1,5 @@
 import {env} from 'cloudflare:workers';
-import {getChatGPTUser} from '../../chatgpt-auth';
+import {getPortalAdmin as getChatGPTUser} from '../../portal-access';
 const fields=['title','document_number','unified_number','created','status','facility','cr','subscription','applicant','category'] as const;
 function json(data:unknown,status=200){return Response.json(data,{status,headers:{'Cache-Control':'no-store'}})}
 export async function GET(request:Request){

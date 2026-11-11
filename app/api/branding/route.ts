@@ -1,14 +1,16 @@
 import {env} from 'cloudflare:workers';
-import {getChatGPTUser} from '../../chatgpt-auth';
+import {getPortalAdmin as getChatGPTUser} from '../../portal-access';
 const json=(d:unknown,s=200)=>Response.json(d,{status:s,headers:{'Cache-Control':'no-store'}});
 export async function GET(request:Request){
- const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
- const d:any=await env.DB!.prepare('SELECT * FROM branding WHERE owner=?').bind(u.userId).first();
+ const documentId=new URL(request.url).searchParams.get('document');let owner:string;
+ if(documentId){const doc=await env.DB!.prepare('SELECT owner FROM documents WHERE id=? AND deleted=0').bind(documentId).first<{owner:string}>();if(!doc)return json({error:'الوثيقة غير موجودة'},404);owner=doc.owner;}
+ else{const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);owner=u.userId;}
+ const d:any=await env.DB!.prepare('SELECT * FROM branding WHERE owner=?').bind(owner).first();
  if(new URL(request.url).searchParams.get('logo')==='1'){
   if(!d?.logo_key)return new Response(null,{status:404});const object=await env.BUCKET!.get(d.logo_key);if(!object)return new Response(null,{status:404});
   return new Response(object.body,{headers:{'Content-Type':d.logo_mime,'X-Content-Type-Options':'nosniff','Cache-Control':'private, no-cache'}});
  }
- return json({name:d?.name||'بوابة الملفات',displayMode:d?.display_mode||'name',hasLogo:!!d?.logo_key,version:d?.updated_at||''});
+ return json({name:d?.name||'بوابة الملفات',displayMode:d?.display_mode||'name',hasLogo:!!d?.logo_key,version:d?.updated_at||'',...(documentId?{documentId}:{})});
 }
 export async function POST(request:Request){
  const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
