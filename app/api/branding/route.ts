@@ -1,9 +1,10 @@
 import {env} from 'cloudflare:workers';
 import {getPortalAdmin as getChatGPTUser} from '../../portal-access';
+import {findDocument} from '../../document-links';
 const json=(d:unknown,s=200)=>Response.json(d,{status:s,headers:{'Cache-Control':'no-store'}});
 export async function GET(request:Request){
  const documentId=new URL(request.url).searchParams.get('document');let owner:string;
- if(documentId){const doc=await env.DB!.prepare('SELECT owner FROM documents WHERE id=? AND deleted=0').bind(documentId).first<{owner:string}>();if(!doc)return json({error:'الوثيقة غير موجودة'},404);owner=doc.owner;}
+ if(documentId){const doc=await findDocument(documentId);if(!doc)return json({error:'الوثيقة غير موجودة'},404);owner=doc.owner;}
  else{const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);owner=u.userId;}
  const d:any=await env.DB!.prepare('SELECT * FROM branding WHERE owner=?').bind(owner).first();
  if(new URL(request.url).searchParams.get('logo')==='1'){
