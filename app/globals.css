@@ -24,3 +24,5 @@
 .pdf-viewer.night .pdf-thumb>span{color:#fff;background:#6c7484;padding:0 2px;border-radius:3px}
 .pdf-viewer.night .pdf-sheet,.pdf-viewer.night .pdf-thumbnail-canvas{filter:none;background:#fff}
 .pdf-viewer.night .pdf-page-error,.pdf-viewer.night .pdf-pages>.center-state{color:#c7d1e1}
+
+.pdf-toolbar svg{display:block;width:18px;height:18px;flex-shrink:0}.pdf-toolbar .pdf-tool.active svg{width:18px;height:18px}
