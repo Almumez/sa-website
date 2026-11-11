@@ -43,3 +43,6 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+# Generated from the locked pdfjs-dist package
+/public/pdfjs/
