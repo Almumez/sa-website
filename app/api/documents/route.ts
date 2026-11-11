@@ -1,0 +1,32 @@
+import {env} from 'cloudflare:workers';
+import {getChatGPTUser} from '../../chatgpt-auth';
+const fields=['title','document_number','unified_number','created','status','facility','cr','subscription','applicant','category'] as const;
+function json(data:unknown,status=200){return Response.json(data,{status,headers:{'Cache-Control':'no-store'}})}
+export async function GET(request:Request){
+ const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
+ const trash=new URL(request.url).searchParams.get('trash')==='1'?1:0;
+ const rows=await env.DB!.prepare('SELECT id,title,filename,mime,size,document_number,unified_number,created,status,facility,cr,subscription,applicant,category,uploaded_at,deleted FROM documents WHERE owner=? AND deleted=? ORDER BY uploaded_at DESC').bind(u.userId,trash).all();return json({documents:rows.results});
+}
+export async function POST(request:Request){
+ const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
+ if(request.headers.get('origin')!==new URL(request.url).origin)return json({error:'طلب غير مسموح'},403);
+ const length=Number(request.headers.get('content-length')||0);if(length>22*1024*1024)return json({error:'الحد الأقصى للملف 20 ميجابايت'},413);
+ let data:FormData;try{data=await request.formData()}catch{return json({error:'تعذرت قراءة الملف'},400)}
+ const file=data.get('file');if(!(file instanceof File)||!file.size)return json({error:'اختر ملفًا غير فارغ'},400);
+ if(file.size>20*1024*1024)return json({error:'الحد الأقصى للملف 20 ميجابايت'},413);
+ const ext=file.name.split('.').pop()?.toLowerCase()||'';
+ const types:Record<string,string>={pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',txt:'text/plain',csv:'text/csv',zip:'application/zip'};
+ if(!types[ext])return json({error:'نوع الملف غير مدعوم'},400);
+ const bytes=new Uint8Array(await file.arrayBuffer());const head=new TextDecoder().decode(bytes.slice(0,12));
+ const valid=ext==='pdf'?head.startsWith('%PDF-'):ext==='png'?bytes[0]===137&&head.slice(1,4)==='PNG':['jpg','jpeg'].includes(ext)?bytes[0]===255&&bytes[1]===216:ext==='webp'?head.startsWith('RIFF')&&head.slice(8,12)==='WEBP':['zip','docx','xlsx','pptx'].includes(ext)?head.startsWith('PK'):!bytes.slice(0,4096).includes(0);
+ if(!valid)return json({error:'محتوى الملف لا يتطابق مع نوعه'},400);
+ const values=fields.map(f=>String(data.get(f)||'').trim());
+ if(!values[0]||values[0].length>200||values.some(v=>v.length>500))return json({error:'أدخل عنوانًا صالحًا وبيانات لا تتجاوز 500 حرف'},400);
+ if(!values[3])values[3]=new Date().toISOString().slice(0,10);
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(values[3])||!['سارية','منتهية','ملغية'].includes(values[4]))return json({error:'تاريخ أو حالة غير صالحة'},400);
+ const id=crypto.randomUUID();if(!values[1])values[1]=`DOC-${Date.now().toString().slice(-8)}`;
+ if(!values[9])values[9]='عام';const key=`${u.userId}/${id}`;
+ await env.BUCKET!.put(key,bytes,{httpMetadata:{contentType:types[ext]}});
+ try{await env.DB!.prepare(`INSERT INTO documents (id,owner,filename,mime,size,object_key,${fields.join(',')},uploaded_at) VALUES (${Array(17).fill('?').join(',')})`).bind(id,u.userId,file.name.slice(0,255),types[ext],file.size,key,...values,new Date().toISOString()).run()}catch(e){await env.BUCKET!.delete(key);throw e}
+ return json({id},201);
+}

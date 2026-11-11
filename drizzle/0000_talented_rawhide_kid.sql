@@ -1,0 +1,20 @@
+CREATE TABLE `documents` (
+	`id` text PRIMARY KEY NOT NULL,
+	`owner` text NOT NULL,
+	`title` text NOT NULL,
+	`filename` text NOT NULL,
+	`mime` text NOT NULL,
+	`size` integer NOT NULL,
+	`object_key` text NOT NULL,
+	`document_number` text NOT NULL,
+	`unified_number` text DEFAULT '' NOT NULL,
+	`created` text NOT NULL,
+	`status` text DEFAULT 'سارية' NOT NULL,
+	`facility` text DEFAULT '' NOT NULL,
+	`cr` text DEFAULT '' NOT NULL,
+	`subscription` text DEFAULT '' NOT NULL,
+	`applicant` text DEFAULT '' NOT NULL,
+	`category` text DEFAULT 'عام' NOT NULL,
+	`uploaded_at` text NOT NULL,
+	`deleted` integer DEFAULT 0 NOT NULL
+);
