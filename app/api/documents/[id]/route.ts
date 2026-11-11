@@ -9,7 +9,7 @@ export async function GET(request:Request,{params}:{params:Promise<{id:string}>}
  const url=new URL(request.url);if(url.searchParams.get('metadata')==='1'){delete d.object_key;delete d.owner;return json({document:d})}
  const object=await env.BUCKET!.get(d.object_key);if(!object)return json({error:'الملف غير متاح'},404);
  const inline=d.mime==='application/pdf'||d.mime.startsWith('image/');const disposition=url.searchParams.get('download')==='1'||!inline?'attachment':'inline';
- return new Response(object.body,{headers:{'Content-Type':d.mime,'Content-Length':String(object.size),'Content-Disposition':`${disposition}; filename="document.${d.filename.split('.').pop()?.replace(/[^a-z0-9]/gi,'')}"; filename*=UTF-8''${encodeURIComponent(d.filename)}`,'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'X-Frame-Options':'SAMEORIGIN'}});
+ return new Response(object.body,{headers:{'Content-Type':d.mime,'ETag':object.httpEtag,'Content-Length':String(object.size),'Content-Disposition':`${disposition}; filename="document.${d.filename.split('.').pop()?.replace(/[^a-z0-9]/gi,'')}"; filename*=UTF-8''${encodeURIComponent(d.filename)}`,'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'X-Frame-Options':'SAMEORIGIN'}});
 }
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
  const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
@@ -32,8 +32,11 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(existing.deleted)return json({error:'استعد الملف من السلة قبل استبداله'},409);
   try{upload=await validateFile(form.get('file'))}catch(e){if(e instanceof UploadError)return json({error:e.message},e.status);throw e}
  }
+ const ifMatch=request.headers.get('if-match');
+ if(upload&&ifMatch){const current=await env.BUCKET!.head(existing.object_key);if(!current||current.httpEtag!==ifMatch)return json({error:'تم تغيير الملف منذ فتح المحرر. أعد فتحه قبل حفظ تعديلات جديدة.'},409)}
  const newKey=upload?`${u.userId}/${id}/${crypto.randomUUID()}`:null;
- if(upload&&newKey)await env.BUCKET!.put(newKey,upload.bytes,{httpMetadata:{contentType:upload.mime}});
+ const newObject=upload&&newKey?await env.BUCKET!.put(newKey,upload.bytes,{httpMetadata:{contentType:upload.mime}}):null;
+ const fileGuard=upload&&ifMatch?' AND object_key=?':'';const guardArgs=upload&&ifMatch?[existing.object_key]:[];
  const assignments=[...fields.map(f=>`${f}=?`)],args:any[]=[...values];
  if(hasSlug){assignments.push('slug=?');args.push(slug||null)}
  if(upload){assignments.push('filename=?','mime=?','size=?','object_key=?');args.push(upload.filename,upload.mime,upload.size,newKey)}
@@ -41,11 +44,11 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(hasSlug&&slug){
    const result=await env.DB!.batch([
     env.DB!.prepare('INSERT INTO document_links (slug,document_id) VALUES (?,?) ON CONFLICT(slug) DO NOTHING').bind(slug,id),
-    env.DB!.prepare(`UPDATE documents SET ${assignments.join(',')} WHERE id=? AND owner=? AND EXISTS(SELECT 1 FROM document_links WHERE slug=? AND document_id=?)`).bind(...args,id,u.userId,slug,id)
+    env.DB!.prepare(`UPDATE documents SET ${assignments.join(',')} WHERE id=? AND owner=?${fileGuard} AND EXISTS(SELECT 1 FROM document_links WHERE slug=? AND document_id=?)`).bind(...args,id,u.userId,...guardArgs,slug,id)
    ]);
-   if(!result[1].meta.changes){if(newKey)await env.BUCKET!.delete(newKey);return json({error:'هذا الرابط مستخدم لملف آخر. اختر رابطًا مختلفًا.'},409)}
-  }else await env.DB!.prepare(`UPDATE documents SET ${assignments.join(',')} WHERE id=? AND owner=?`).bind(...args,id,u.userId).run();
+   if(!result[1].meta.changes){if(newKey)await env.BUCKET!.delete(newKey);return json({error:ifMatch?'تم تغيير الملف أو استخدام الرابط؛ أعد فتح المحرر.':'هذا الرابط مستخدم لملف آخر. اختر رابطًا مختلفًا.'},409)}
+  }else{const result=await env.DB!.prepare(`UPDATE documents SET ${assignments.join(',')} WHERE id=? AND owner=?${fileGuard}`).bind(...args,id,u.userId,...guardArgs).run();if(!result.meta.changes){if(newKey)await env.BUCKET!.delete(newKey);return json({error:'تم تغيير الملف منذ فتح المحرر. أعد فتحه قبل الحفظ.'},409)}}
  }catch(e){if(newKey)await env.BUCKET!.delete(newKey);throw e}
  if(newKey){try{await env.BUCKET!.delete(existing.object_key)}catch{console.warn('Replaced file saved; old object cleanup deferred')}}
- return json({ok:true,slug:slug||null,replaced:!!upload});
+ return json({ok:true,slug:slug||null,replaced:!!upload,etag:newObject?.httpEtag});
 }
