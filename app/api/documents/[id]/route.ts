@@ -2,6 +2,7 @@ import {env} from 'cloudflare:workers';
 import {getPortalAdmin as getChatGPTUser} from '../../../portal-access';
 import {findDocument,normalizeSlug,validSlug} from '../../../document-links';
 import {validateFile,UploadError} from '../../../uploaded-files';
+import {timestampDownloadName} from '../../../download-filename';
 const json=(d:unknown,s=200)=>Response.json(d,{status:s,headers:{'Cache-Control':'no-store'}});
 export async function GET(request:Request,{params}:{params:Promise<{id:string}>}){
  const {id}=await params;
@@ -9,7 +10,8 @@ export async function GET(request:Request,{params}:{params:Promise<{id:string}>}
  const url=new URL(request.url);if(url.searchParams.get('metadata')==='1'){delete d.object_key;delete d.owner;return json({document:d})}
  const object=await env.BUCKET!.get(d.object_key);if(!object)return json({error:'الملف غير متاح'},404);
  const inline=d.mime==='application/pdf'||d.mime.startsWith('image/');const disposition=url.searchParams.get('download')==='1'||!inline?'attachment':'inline';
- return new Response(object.body,{headers:{'Content-Type':d.mime,'ETag':object.httpEtag,'Content-Length':String(object.size),'Content-Disposition':`${disposition}; filename="document.${d.filename.split('.').pop()?.replace(/[^a-z0-9]/gi,'')}"; filename*=UTF-8''${encodeURIComponent(d.filename)}`,'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'X-Frame-Options':'SAMEORIGIN'}});
+ const downloadName=timestampDownloadName(d.filename);
+ return new Response(object.body,{headers:{'Content-Type':d.mime,'ETag':object.httpEtag,'Content-Length':String(object.size),'Content-Disposition':`${disposition}; filename="${downloadName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'X-Frame-Options':'SAMEORIGIN'}});
 }
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
  const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
