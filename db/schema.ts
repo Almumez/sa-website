@@ -9,3 +9,10 @@ export const documentLinks=sqliteTable('document_links',{
 export const branding=sqliteTable('branding',{
  owner:text('owner').primaryKey(),name:text('name').notNull().default('بوابة الملفات'),displayMode:text('display_mode').notNull().default('name'),logoKey:text('logo_key'),logoMime:text('logo_mime'),updatedAt:text('updated_at').notNull()
 });
+
+export const portalAccounts=sqliteTable('portal_accounts',{
+ id:text('id').primaryKey(),username:text('username').notNull().unique(),email:text('email').notNull().unique(),displayName:text('display_name').notNull(),passwordHash:text('password_hash').notNull(),role:text('role').notNull().default('member'),active:integer('active').notNull().default(1),canAdd:integer('can_add').notNull().default(0),canEdit:integer('can_edit').notNull().default(0),canDelete:integer('can_delete').notNull().default(0)
+});
+export const portalSettings=sqliteTable('portal_settings',{id:integer('id').primaryKey(),ownerDataId:text('owner_data_id').notNull()});
+export const portalSessions=sqliteTable('portal_sessions',{tokenHash:text('token_hash').primaryKey(),accountId:text('account_id').notNull().references(()=>portalAccounts.id),expiresAt:integer('expires_at').notNull()});
+export const portalLoginLimits=sqliteTable('portal_login_limits',{key:text('key').primaryKey(),window:integer('window').notNull(),count:integer('count').notNull()});

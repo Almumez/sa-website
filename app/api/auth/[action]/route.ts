@@ -1,0 +1,44 @@
+import {env} from 'cloudflare:workers';
+import {cookies} from 'next/headers';
+import {getPortalAdmin,bootstrapOwner,initialized,SESSION_COOKIE,tokenHash} from '../../../portal-access';
+import {authJSON as json,sameOrigin,accountInput,newSession,cookieHeader,loginLimit,safeReturn} from '../../../auth-utils';
+import {hashPassword,verifyPassword,validPassword} from '../../../passwords';
+export async function GET(_r:Request,{params}:{params:Promise<{action:string}>}){if((await params).action!=='me')return json({error:'غير موجود'},404);const user=await getPortalAdmin();return user?json({user}):json({error:'يرجى تسجيل الدخول'},401)}
+export async function POST(request:Request,{params}:{params:Promise<{action:string}>}){
+ if(!sameOrigin(request))return json({error:'طلب غير مسموح'},403);
+ const {action}=await params;
+ if(action==='logout'){const token=(await cookies()).get(SESSION_COOKIE)?.value;if(token)await env.DB!.prepare('DELETE FROM portal_sessions WHERE token_hash=?').bind(await tokenHash(token)).run();return new Response(null,{status:303,headers:{Location:'/login','Set-Cookie':cookieHeader('',request,0),'Cache-Control':'no-store'}})}
+ if(Number(request.headers.get('content-length')||0)>16384)return json({error:'بيانات كبيرة جدًا'},413);
+ let d:any;try{d=await request.json();if(!d||typeof d!=='object')throw 0}catch{return json({error:'بيانات غير صالحة'},400)}
+ if(action==='setup'){
+  const owner=await bootstrapOwner();if(!owner)return json({error:'إعداد المدير متاح لصاحب الموقع فقط'},403);
+  if(await initialized())return json({error:'تم إعداد حساب المدير مسبقًا'},409);
+  const v=accountInput(d);if(!v||!validPassword(d.password))return json({error:'تحقق من البيانات. كلمة المرور من 12 إلى 128 حرفًا واسم المستخدم 3 إلى 50 حرفًا إنجليزيًا أو رقمًا أو . _ -'},400);
+  const id=crypto.randomUUID(),hash=await hashPassword(d.password);
+  try{await env.DB!.batch([
+   env.DB!.prepare('INSERT INTO portal_accounts (id,username,email,display_name,password_hash,role,active,can_add,can_edit,can_delete) VALUES (?,?,?,?,?,\'owner\',1,1,1,1)').bind(id,v.username,v.email,v.displayName,hash),
+   env.DB!.prepare('INSERT INTO portal_settings (id,owner_data_id) VALUES (1,?)').bind(owner.userId)
+  ])}catch{return json({error:'تم الإعداد مسبقًا أو اسم المستخدم مستخدم'},409)}
+  const token=await newSession(id);return new Response(JSON.stringify({ok:true,returnTo:'/admin/users'}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':cookieHeader(token,request)}});
+ }
+ if(action==='login'){
+  const identifier=typeof d.identifier==='string'?d.identifier.trim().toLowerCase():'';
+  if(!identifier||identifier.length>254||typeof d.password!=='string'||d.password.length>128)return json({error:'بيانات الدخول غير صحيحة'},400);
+  if(!await loginLimit(request,identifier))return new Response(JSON.stringify({error:'محاولات كثيرة. أعد المحاولة بعد 15 دقيقة.'}),{status:429,headers:{'Content-Type':'application/json','Cache-Control':'no-store','Retry-After':'900'}});
+  const a:any=await env.DB!.prepare('SELECT * FROM portal_accounts WHERE username=? OR email=?').bind(identifier,identifier).first();
+  const dummy='pbkdf2-sha256$600000$00000000000000000000000000000000$'+'0'.repeat(64);
+  const valid=await verifyPassword(d.password,a?.password_hash||dummy);
+  if(!a||!a.active||!valid)return json({error:'اسم المستخدم أو كلمة المرور غير صحيحة'},401);
+  await env.DB!.prepare('DELETE FROM portal_sessions WHERE expires_at<?').bind(Date.now()).run();
+  const token=await newSession(a.id);return new Response(JSON.stringify({ok:true,returnTo:safeReturn(d.returnTo)}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':cookieHeader(token,request)}});
+ }
+ if(action==='password'){
+  const u=await getPortalAdmin();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
+  if(!await loginLimit(request,'password:'+u.userId))return json({error:'محاولات كثيرة، حاول لاحقًا'},429);
+  if(!validPassword(d.password)||typeof d.currentPassword!=='string'||d.currentPassword.length>128)return json({error:'كلمة المرور الجديدة من 12 إلى 128 حرفًا'},400);
+  const a:any=await env.DB!.prepare('SELECT password_hash FROM portal_accounts WHERE id=?').bind(u.userId).first();if(!a||!await verifyPassword(d.currentPassword,a.password_hash))return json({error:'كلمة المرور الحالية غير صحيحة'},400);
+  await env.DB!.batch([env.DB!.prepare('UPDATE portal_accounts SET password_hash=? WHERE id=?').bind(await hashPassword(d.password),u.userId),env.DB!.prepare('DELETE FROM portal_sessions WHERE account_id=?').bind(u.userId)]);
+  const token=await newSession(u.userId);return new Response(JSON.stringify({ok:true}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':cookieHeader(token,request)}});
+ }
+ return json({error:'غير موجود'},404);
+}

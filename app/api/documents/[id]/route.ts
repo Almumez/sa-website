@@ -20,8 +20,9 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
  const {id}=await params;let d:any,form:FormData|null=null;
  try{if(request.headers.get('content-type')?.includes('multipart/form-data')){form=await request.formData();d=Object.fromEntries(form.entries())}else d=await request.json()}catch{return json({error:'بيانات غير صالحة'},400)}
  if(!d||typeof d!=='object')return json({error:'بيانات غير صالحة'},400);
- const existing:any=await env.DB!.prepare('SELECT * FROM documents WHERE id=? AND owner=?').bind(id,u.userId).first();if(!existing)return json({error:'الوثيقة غير موجودة'},404);
- if(typeof d.deleted==='boolean'){await env.DB!.prepare('UPDATE documents SET deleted=? WHERE id=? AND owner=?').bind(d.deleted?1:0,id,u.userId).run();return json({ok:true})}
+ if(typeof d.deleted==='boolean'){if(!u.canDelete)return json({error:'ليس لديك صلاحية حذف الملفات واستعادتها'},403)}else if(!u.canEdit)return json({error:'ليس لديك صلاحية تعديل الملفات'},403);
+ const existing:any=await env.DB!.prepare('SELECT * FROM documents WHERE id=? AND owner=?').bind(id,u.ownerId).first();if(!existing)return json({error:'الوثيقة غير موجودة'},404);
+ if(typeof d.deleted==='boolean'){await env.DB!.prepare('UPDATE documents SET deleted=? WHERE id=? AND owner=?').bind(d.deleted?1:0,id,u.ownerId).run();return json({ok:true})}
  const fields=['title','document_number','unified_number','created','status','facility','cr','subscription','applicant','category'];
  const values=fields.map(f=>Object.prototype.hasOwnProperty.call(d,f)?String(d[f]??'').trim():String(existing[f]??''));
  if(!values[0]||values[0].length>200||values.some(v=>v.length>500)||!/^\d{4}-\d{2}-\d{2}$/.test(values[3])||!['سارية','منتهية','ملغية'].includes(values[4]))return json({error:'تحقق من العنوان والتاريخ والحالة'},400);
@@ -36,7 +37,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
  }
  const ifMatch=request.headers.get('if-match');
  if(upload&&ifMatch){const current=await env.BUCKET!.head(existing.object_key);if(!current||current.httpEtag!==ifMatch)return json({error:'تم تغيير الملف منذ فتح المحرر. أعد فتحه قبل حفظ تعديلات جديدة.'},409)}
- const newKey=upload?`${u.userId}/${id}/${crypto.randomUUID()}`:null;
+ const newKey=upload?`${u.ownerId}/${id}/${crypto.randomUUID()}`:null;
  const newObject=upload&&newKey?await env.BUCKET!.put(newKey,upload.bytes,{httpMetadata:{contentType:upload.mime}}):null;
  const fileGuard=upload&&ifMatch?' AND object_key=?':'';const guardArgs=upload&&ifMatch?[existing.object_key]:[];
  const assignments=[...fields.map(f=>`${f}=?`)],args:any[]=[...values];
@@ -46,10 +47,10 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(hasSlug&&slug){
    const result=await env.DB!.batch([
     env.DB!.prepare('INSERT INTO document_links (slug,document_id) VALUES (?,?) ON CONFLICT(slug) DO NOTHING').bind(slug,id),
-    env.DB!.prepare(`UPDATE documents SET ${assignments.join(',')} WHERE id=? AND owner=?${fileGuard} AND EXISTS(SELECT 1 FROM document_links WHERE slug=? AND document_id=?)`).bind(...args,id,u.userId,...guardArgs,slug,id)
+    env.DB!.prepare(`UPDATE documents SET ${assignments.join(',')} WHERE id=? AND owner=?${fileGuard} AND EXISTS(SELECT 1 FROM document_links WHERE slug=? AND document_id=?)`).bind(...args,id,u.ownerId,...guardArgs,slug,id)
    ]);
    if(!result[1].meta.changes){if(newKey)await env.BUCKET!.delete(newKey);return json({error:ifMatch?'تم تغيير الملف أو استخدام الرابط؛ أعد فتح المحرر.':'هذا الرابط مستخدم لملف آخر. اختر رابطًا مختلفًا.'},409)}
-  }else{const result=await env.DB!.prepare(`UPDATE documents SET ${assignments.join(',')} WHERE id=? AND owner=?${fileGuard}`).bind(...args,id,u.userId,...guardArgs).run();if(!result.meta.changes){if(newKey)await env.BUCKET!.delete(newKey);return json({error:'تم تغيير الملف منذ فتح المحرر. أعد فتحه قبل الحفظ.'},409)}}
+  }else{const result=await env.DB!.prepare(`UPDATE documents SET ${assignments.join(',')} WHERE id=? AND owner=?${fileGuard}`).bind(...args,id,u.ownerId,...guardArgs).run();if(!result.meta.changes){if(newKey)await env.BUCKET!.delete(newKey);return json({error:'تم تغيير الملف منذ فتح المحرر. أعد فتحه قبل الحفظ.'},409)}}
  }catch(e){if(newKey)await env.BUCKET!.delete(newKey);throw e}
  if(newKey){try{await env.BUCKET!.delete(existing.object_key)}catch{console.warn('Replaced file saved; old object cleanup deferred')}}
  return json({ok:true,slug:slug||null,replaced:!!upload,etag:newObject?.httpEtag});
