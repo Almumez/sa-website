@@ -30,7 +30,8 @@ test('Vercel Blob JSON storage initializes once and preserves concurrent transac
     if(row)row.count++;else data.portal_login_limits.push({key:'parallel',window:1,count:1});
   })));
   assert.equal((await stores[3].read()).portal_login_limits[0].count,24);
-  assert.ok(blob.objects.has('portal/state.previous.json'));
+  assert.ok(blob.objects.has('portal/recovery/index.json'));
+  assert.equal([...blob.objects.keys()].filter(path=>path.startsWith('portal/recovery/')&&path.endsWith('.json')).length,2,'ephemeral login counters must not create backup churn');
 });
 
 test('Vercel Blob JSON storage refuses to silently reset when the main object disappears',async()=>{
@@ -39,4 +40,17 @@ test('Vercel Blob JSON storage refuses to silently reset when the main object di
   await store.transaction(data=>{data.portal_login_limits[0].count++;});
   blob.objects.delete('portal/state.json');
   await assert.rejects(store.read(),/backup exists/);
+});
+
+test('Vercel Blob JSON recovery snapshots are immutable and deduplicated',async()=>{
+  const blob=memoryBlob(),store=createVercelJsonStore(blob);
+  await store.transaction(data=>data.portal_accounts.push({id:'owner',username:'owner',email:'owner@example.test',display_name:'Owner',password_hash:'hash',role:'owner',active:1,can_add:1,can_edit:1,can_delete:1}));
+  await store.transaction(data=>data.portal_sessions.push({token_hash:'token',account_id:'owner',expires_at:10}));
+  await store.transaction(data=>data.portal_login_limits.push({key:'login',window:1,count:1}));
+  const snapshots=[...blob.objects.keys()].filter(path=>path.startsWith('portal/recovery/')&&path.endsWith('.json'));
+  assert.equal(snapshots.length,2);
+  const recovered=JSON.parse(blob.objects.get(snapshots.find(path=>path!=='portal/recovery/index.json')).raw);
+  assert.equal(recovered.portal_accounts.length,1);
+  assert.deepEqual(recovered.portal_sessions,[]);
+  assert.deepEqual(recovered.portal_login_limits,[]);
 });
