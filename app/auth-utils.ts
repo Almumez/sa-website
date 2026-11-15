@@ -7,7 +7,7 @@ export function sameOrigin(r:Request){
  if(process.env.APP_ORIGIN)return r.headers.get('origin')===new URL(process.env.APP_ORIGIN).origin;
  return r.headers.get('origin')===`${protocol}//${host}`;
 }
-export function safeReturn(value:unknown){if(typeof value!=='string')return '/admin';try{const u=new URL(value,'https://portal.local');return value.startsWith('/')&&u.origin==='https://portal.local'&&(u.pathname==='/'||u.pathname==='/admin'||u.pathname.startsWith('/admin/'))?u.pathname+u.search:'/admin'}catch{return '/admin'}}
+export function safeReturn(value:unknown){if(typeof value!=='string')return '/';try{const u=new URL(value,'https://portal.local');return value.startsWith('/')&&u.origin==='https://portal.local'&&(u.pathname==='/'||u.pathname==='/admin'||u.pathname.startsWith('/admin/'))?u.pathname+u.search:'/'}catch{return '/'}}
 export function accountInput(d:any){const username=String(d.username||'').trim().toLowerCase(),email=String(d.email||'').trim().toLowerCase(),displayName=String(d.displayName||'').trim();if(!/^[a-z0-9][a-z0-9._-]{2,49}$/.test(username)||!/^\S+@\S+\.\S+$/.test(email)||email.length>254||!displayName||displayName.length>100)return null;return {username,email,displayName}}
 export function cookieHeader(token:string,request:Request,maxAge=43200){return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${(process.env.APP_ORIGIN?new URL(process.env.APP_ORIGIN):new URL(request.url)).protocol==='https:'?'; Secure':''}`}
 export async function newSession(accountId:string){

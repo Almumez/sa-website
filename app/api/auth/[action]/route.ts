@@ -20,7 +20,7 @@ export async function POST(request:Request,{params}:{params:Promise<{action:stri
    data.portal_accounts.push({id,username:v.username,email:v.email,display_name:v.displayName,password_hash:hash,role:'owner',active:1,can_add:1,can_edit:1,can_delete:1});
    data.portal_settings.push({id:1,owner_data_id:owner.userId});
   });}catch{return json({error:'تم الإعداد مسبقًا أو اسم المستخدم مستخدم'},409);}
-  const token=await newSession(id);return new Response(JSON.stringify({ok:true,returnTo:'/admin/users'}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':cookieHeader(token,request)}});
+  const token=await newSession(id);return new Response(JSON.stringify({ok:true,returnTo:'/'}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':cookieHeader(token,request)}});
  }
  if(action==='login'){
   const identifier=typeof d.identifier==='string'?d.identifier.trim().toLowerCase():'';
