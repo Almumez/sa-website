@@ -15,8 +15,11 @@
     "prebuild": "node scripts/sync-pdf-assets.mjs",
     "predev": "node scripts/sync-pdf-assets.mjs",
     "typecheck": "tsc --noEmit",
-    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
-    "test:vercel": "node --test tests/vercel.test.mjs"
+    "data:init": "node --env-file-if-exists=.env.local scripts/init-json.mjs",
+    "data:import": "node --env-file-if-exists=.env.local scripts/import-legacy.mjs",
+    "data:backup": "node --env-file-if-exists=.env.local scripts/backup-json.mjs",
+    "data:unlock": "node --env-file-if-exists=.env.local scripts/recover-json-lock.mjs",
+    "test": "node --test tests/json-store.test.mjs tests/local-app.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -46,9 +49,6 @@
     "tailwind-merge": "3.6.0",
     "vaul": "^1.1.2",
     "zod": "^3.25.76",
-    "@libsql/client": "0.18.0",
-    "@aws-sdk/client-s3": "3.1169.0",
-    "@aws-sdk/s3-request-presigner": "3.1169.0",
     "server-only": "0.0.1"
   },
   "devDependencies": {

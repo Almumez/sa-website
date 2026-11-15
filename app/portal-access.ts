@@ -1,11 +1,11 @@
-import {env} from '@/lib/server/env';
+import {store} from '@/lib/server/repository';
 import {cookies} from 'next/headers';
 import {redirect,notFound} from 'next/navigation';
 import {timingSafeEqual} from 'node:crypto';
 export type PortalUser={userId:string;ownerId:string;displayName:string;email:string;isOwner:boolean;canAdd:boolean;canEdit:boolean;canDelete:boolean};
 export const SESSION_COOKIE='portal_session';
 export async function tokenHash(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('')}
-export async function initialized(){return !!await env.DB!.prepare('SELECT id FROM portal_settings WHERE id=1').first()}
+export async function initialized(){return (await store.read()).portal_settings.length>0}
 export async function bootstrapOwner(setupKey:unknown){
  const expected=process.env.ADMIN_SETUP_SECRET;
  if(!expected||expected.length<32||typeof setupKey!=='string')return null;
@@ -17,7 +17,11 @@ export async function bootstrapOwner(setupKey:unknown){
 }
 export async function getPortalAdmin():Promise<PortalUser|null>{
  const token=(await cookies()).get(SESSION_COOKIE)?.value;if(!token||!/^[a-f0-9]{64}$/.test(token))return null;
- const a:any=await env.DB!.prepare('SELECT a.*,p.owner_data_id FROM portal_sessions s JOIN portal_accounts a ON a.id=s.account_id CROSS JOIN portal_settings p WHERE s.token_hash=? AND s.expires_at>? AND a.active=1 AND p.id=1').bind(await tokenHash(token),Date.now()).first();
+ const data=await store.read(),hash=await tokenHash(token);
+ const session=data.portal_sessions.find(row=>row.token_hash===hash&&row.expires_at>Date.now());
+ const account=session?data.portal_accounts.find(row=>row.id===session.account_id&&row.active===1):null;
+ const settings=data.portal_settings[0];
+ const a=account&&settings?{...account,owner_data_id:settings.owner_data_id}:null;
  if(!a)return null;const owner=a.role==='owner';return {userId:a.id,ownerId:a.owner_data_id,displayName:a.display_name,email:a.email,isOwner:owner,canAdd:owner||!!a.can_add,canEdit:owner||!!a.can_edit,canDelete:owner||!!a.can_delete};
 }
 export async function requirePortalAdmin(returnTo:string){const u=await getPortalAdmin();if(!u)redirect('/login?returnTo='+encodeURIComponent(returnTo));return u}

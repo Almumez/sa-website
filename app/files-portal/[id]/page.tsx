@@ -1,5 +1,5 @@
 import Portal from '../../portal';
-import {env} from '@/lib/server/env';
+import {getBranding} from '@/lib/server/repository';
 import {cache} from 'react';
 import type {Metadata} from 'next';
 import type {Brand} from '../../branding';
@@ -7,7 +7,7 @@ import {findDocument} from '../../document-links';
 export const dynamic='force-dynamic';
 const documentBrand=cache(async(id:string):Promise<Brand>=>{
  const doc=await findDocument(id);
- const brand=doc?await env.DB!.prepare('SELECT name,display_mode,logo_key,updated_at FROM branding WHERE owner=?').bind(doc.owner).first<{name:string;display_mode:string;logo_key:string|null;updated_at:string}>():null;
+ const brand=doc?await getBranding(doc.owner):null;
  return {name:brand?.name||'بوابة الملفات',displayMode:brand?.display_mode||'name',hasLogo:!!brand?.logo_key,version:brand?.updated_at||'',documentId:id};
 });
 export async function generateMetadata({params}:{params:Promise<{id:string}>}):Promise<Metadata>{

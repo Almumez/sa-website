@@ -1,47 +1,24 @@
 import 'server-only';
-import {S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand, DeleteObjectCommand} from '@aws-sdk/client-s3';
-import {getSignedUrl} from '@aws-sdk/s3-request-presigner';
+import {mkdir,readFile,unlink,open} from 'node:fs/promises';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {dataDirectory} from './json-store.mjs';
 
-let client: S3Client | undefined;
-export function storageClient() {
-  if (!client) {
-    const {S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY} = process.env;
-    if (!S3_ACCESS_KEY_ID || !S3_SECRET_ACCESS_KEY) throw new Error('Missing S3 credentials. See DEPLOYMENT.md.');
-    client = new S3Client({region:process.env.S3_REGION || 'auto', endpoint:S3_ENDPOINT || undefined,
-      forcePathStyle:process.env.S3_FORCE_PATH_STYLE === 'true',
-      credentials:{accessKeyId:S3_ACCESS_KEY_ID,secretAccessKey:S3_SECRET_ACCESS_KEY},
-      requestChecksumCalculation:'WHEN_REQUIRED',responseChecksumValidation:'WHEN_REQUIRED'});
-  }
-  return client;
+function objectPath(key:string){
+  // Keep legacy R2 keys in JSON; hashing avoids path traversal and platform filename restrictions.
+  return path.join(dataDirectory(),'uploads',createHash('sha256').update(key).digest('hex'));
 }
-export function bucketName() {
-  if (!process.env.S3_BUCKET) throw new Error('Missing S3_BUCKET. See DEPLOYMENT.md.');
-  return process.env.S3_BUCKET;
-}
-function missing(error: unknown) {
-  return (error as {$metadata?: {httpStatusCode?: number}})?.$metadata?.httpStatusCode === 404;
-}
-export const bucket = {
-  async put(key: string, bytes: Uint8Array, options?: {httpMetadata?: {contentType?: string}}) {
-    const value = await storageClient().send(new PutObjectCommand({Bucket:bucketName(),Key:key,Body:bytes,ContentType:options?.httpMetadata?.contentType}));
-    return {httpEtag:value.ETag || ''};
+export const bucket={
+  async put(key:string,bytes:Uint8Array){
+    const filename=objectPath(key);await mkdir(path.dirname(filename),{recursive:true,mode:0o700});
+    const file=await open(filename,'wx',0o600);
+    try{await file.writeFile(bytes);await file.sync();}finally{await file.close();}
+    return {httpEtag:'"'+createHash('sha256').update(bytes).digest('hex')+'"'};
   },
-  async head(key: string) {
-    try {
-      const value = await storageClient().send(new HeadObjectCommand({Bucket:bucketName(),Key:key}));
-      return {size:value.ContentLength || 0,httpEtag:value.ETag || ''};
-    } catch (error) { if (missing(error)) return null; throw error; }
+  async get(key:string){
+    try{const bytes=await readFile(objectPath(key));return {body:new Uint8Array(bytes),size:bytes.length,httpEtag:'"'+createHash('sha256').update(bytes).digest('hex')+'"'};}
+    catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;}
   },
-  async get(key: string) {
-    try {
-      const value = await storageClient().send(new GetObjectCommand({Bucket:bucketName(),Key:key}));
-      if (!value.Body) return null;
-      return {body:value.Body.transformToWebStream(),size:value.ContentLength || 0,httpEtag:value.ETag || ''};
-    } catch (error) { if (missing(error)) return null; throw error; }
-  },
-  async delete(key: string) { await storageClient().send(new DeleteObjectCommand({Bucket:bucketName(),Key:key})); },
+  async head(key:string){const object=await this.get(key);return object?{size:object.size,httpEtag:object.httpEtag}:null;},
+  async delete(key:string){try{await unlink(objectPath(key));}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}},
 };
-export async function downloadURL(key: string, mime: string, disposition: string) {
-  return getSignedUrl(storageClient(),new GetObjectCommand({Bucket:bucketName(),Key:key,
-    ResponseContentType:mime,ResponseContentDisposition:disposition,ResponseCacheControl:'no-store'}),{expiresIn:300});
-}

@@ -1,4 +1,2 @@
-import {drizzle} from 'drizzle-orm/libsql';
-import {databaseClient} from '@/lib/server/database';
-import * as schema from './schema';
-export function getDb() { return drizzle(databaseClient(), {schema}); }
+// Legacy Drizzle schema/migrations document the old data format only.
+export {store as getStore} from '@/lib/server/repository';

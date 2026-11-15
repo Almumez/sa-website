@@ -10,6 +10,8 @@ node_modules
 outputs
 work
 backups
+data
+data-import-*
 examples
 tests
 *.tsbuildinfo
