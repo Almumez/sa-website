@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import {env} from 'cloudflare:workers';
+import {env} from '@/lib/server/env';
 import {getPortalAdmin} from './portal-access';
 import './globals.css';
 export const dynamic='force-dynamic';

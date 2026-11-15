@@ -1,4 +1,7 @@
-import {env} from 'cloudflare:workers';
+import {sameOrigin} from '@/app/auth-utils';
+import {resolveUpload} from '@/lib/server/uploads';
+import {downloadURL} from '@/lib/server/storage';
+import {env} from '@/lib/server/env';
 import {getPortalAdmin as getChatGPTUser} from '../../../portal-access';
 import {findDocument,normalizeSlug,validSlug} from '../../../document-links';
 import {validateFile,UploadError} from '../../../uploaded-files';
@@ -8,14 +11,16 @@ export async function GET(request:Request,{params}:{params:Promise<{id:string}>}
  const {id}=await params;
  const d:any=await findDocument(id);if(!d)return json({error:'الوثيقة غير موجودة أو في سلة المحذوفات'},404);
  const url=new URL(request.url);if(url.searchParams.get('metadata')==='1'){delete d.object_key;delete d.owner;return json({document:d})}
- const object=await env.BUCKET!.get(d.object_key);if(!object)return json({error:'الملف غير متاح'},404);
- const inline=d.mime==='application/pdf'||d.mime.startsWith('image/');const disposition=url.searchParams.get('download')==='1'||!inline?'attachment':'inline';
- const downloadName=timestampDownloadName(d.filename);
- return new Response(object.body,{headers:{'Content-Type':d.mime,'ETag':object.httpEtag,'Content-Length':String(object.size),'Content-Disposition':`${disposition}; filename="${downloadName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'",'X-Frame-Options':'SAMEORIGIN'}});
+ const object=await env.BUCKET!.head(d.object_key);if(!object)return json({error:'الملف غير متاح'},404);
+ const urlDownload=url.searchParams.get('download')==='1';
+ const inline=d.mime==='application/pdf'||d.mime.startsWith('image/');
+ const name=timestampDownloadName(d.filename);
+ const disposition=`${urlDownload||!inline?'attachment':'inline'}; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+ return new Response(null,{status:307,headers:{Location:await downloadURL(d.object_key,d.mime,disposition),'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow'}});
 }
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
  const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
- if(request.headers.get('origin')!==new URL(request.url).origin)return json({error:'طلب غير مسموح'},403);
+ if(!sameOrigin(request))return json({error:'طلب غير مسموح'},403);
  if(Number(request.headers.get('content-length')||0)>22*1024*1024)return json({error:'الحد الأقصى للملف 20 ميجابايت'},413);
  const {id}=await params;let d:any,form:FormData|null=null;
  try{if(request.headers.get('content-type')?.includes('multipart/form-data')){form=await request.formData();d=Object.fromEntries(form.entries())}else d=await request.json()}catch{return json({error:'بيانات غير صالحة'},400)}
@@ -31,15 +36,15 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
  const slug=hasSlug?normalizeSlug(d.slug||''):existing.slug;
  if(hasSlug&&slug&&!validSlug(slug))return json({error:'استخدم 3 إلى 100 حرف عربي أو إنجليزي أو أرقام وشرطات، دون مسافات أو رموز الروابط'},400);
  let upload:Awaited<ReturnType<typeof validateFile>>|null=null;
- if(form?.has('file')){
+ if(form?.has('file')||d.uploadToken){
   if(existing.deleted)return json({error:'استعد الملف من السلة قبل استبداله'},409);
-  try{upload=await validateFile(form.get('file'))}catch(e){if(e instanceof UploadError)return json({error:e.message},e.status);throw e}
+  try{upload=d.uploadToken?await resolveUpload(d.uploadToken,u.ownerId):await validateFile(form!.get('file'))}catch(e){if(e instanceof UploadError)return json({error:e.message},e.status);throw e}
  }
  const ifMatch=request.headers.get('if-match');
  if(upload&&ifMatch){const current=await env.BUCKET!.head(existing.object_key);if(!current||current.httpEtag!==ifMatch)return json({error:'تم تغيير الملف منذ فتح المحرر. أعد فتحه قبل حفظ تعديلات جديدة.'},409)}
  const newKey=upload?`${u.ownerId}/${id}/${crypto.randomUUID()}`:null;
  const newObject=upload&&newKey?await env.BUCKET!.put(newKey,upload.bytes,{httpMetadata:{contentType:upload.mime}}):null;
- const fileGuard=upload&&ifMatch?' AND object_key=?':'';const guardArgs=upload&&ifMatch?[existing.object_key]:[];
+ const fileGuard=upload?' AND object_key=?':'';const guardArgs=upload?[existing.object_key]:[];
  const assignments=[...fields.map(f=>`${f}=?`)],args:any[]=[...values];
  if(hasSlug){assignments.push('slug=?');args.push(slug||null)}
  if(upload){assignments.push('filename=?','mime=?','size=?','object_key=?');args.push(upload.filename,upload.mime,upload.size,newKey)}

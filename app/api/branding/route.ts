@@ -1,4 +1,5 @@
-import {env} from 'cloudflare:workers';
+import {sameOrigin} from '@/app/auth-utils';
+import {env} from '@/lib/server/env';
 import {getPortalAdmin as getChatGPTUser} from '../../portal-access';
 import {findDocument} from '../../document-links';
 const json=(d:unknown,s=200)=>Response.json(d,{status:s,headers:{'Cache-Control':'no-store'}});
@@ -16,7 +17,7 @@ export async function GET(request:Request){
 export async function POST(request:Request){
  const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
  if(!u.isOwner)return json({error:'إعدادات الهوية للمدير فقط'},403);
- if(request.headers.get('origin')!==new URL(request.url).origin)return json({error:'طلب غير مسموح'},403);
+ if(!sameOrigin(request))return json({error:'طلب غير مسموح'},403);
  if(Number(request.headers.get('content-length')||0)>3*1024*1024)return json({error:'الحد الأقصى للشعار 2 ميجابايت'},413);
  let form:FormData;try{form=await request.formData()}catch{return json({error:'بيانات غير صالحة'},400)}
  const name=String(form.get('name')||'').trim(),mode=String(form.get('displayMode')||'name');

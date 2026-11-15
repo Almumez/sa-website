@@ -1,4 +1,4 @@
-import {env} from 'cloudflare:workers';
+import {env} from '@/lib/server/env';
 import {getPortalAdmin} from '../../portal-access';
 import {authJSON as json,sameOrigin,accountInput} from '../../auth-utils';
 import {hashPassword,validPassword} from '../../passwords';

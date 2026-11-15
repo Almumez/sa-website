@@ -1,0 +1,15 @@
+.sites-runtime
+.wrangler
+.vinext
+.next
+dist
+.git
+.dev.vars*
+.env*
+node_modules
+outputs
+work
+backups
+examples
+tests
+*.tsbuildinfo

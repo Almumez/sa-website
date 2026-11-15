@@ -1,12 +1,20 @@
-import {env} from 'cloudflare:workers';
+import {env} from '@/lib/server/env';
 import {cookies} from 'next/headers';
 import {redirect,notFound} from 'next/navigation';
-import {getChatGPTUser} from './chatgpt-auth';
+import {timingSafeEqual} from 'node:crypto';
 export type PortalUser={userId:string;ownerId:string;displayName:string;email:string;isOwner:boolean;canAdd:boolean;canEdit:boolean;canDelete:boolean};
 export const SESSION_COOKIE='portal_session';
 export async function tokenHash(value:string){return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('')}
 export async function initialized(){return !!await env.DB!.prepare('SELECT id FROM portal_settings WHERE id=1').first()}
-export async function bootstrapOwner(){const u=await getChatGPTUser();return u&&env.SITE_OWNER_EMAIL&&u.email.trim().toLowerCase()===env.SITE_OWNER_EMAIL.trim().toLowerCase()?u:null}
+export async function bootstrapOwner(setupKey:unknown){
+ const expected=process.env.ADMIN_SETUP_SECRET;
+ if(!expected||expected.length<32||typeof setupKey!=='string')return null;
+ const a=Buffer.from(expected),b=Buffer.from(setupKey);
+ if(a.length!==b.length||!timingSafeEqual(a,b))return null;
+ const email=process.env.SITE_OWNER_EMAIL?.trim().toLowerCase();
+ if(!email)return null;
+ return {userId:process.env.PORTAL_OWNER_DATA_ID||'portal-owner',email};
+}
 export async function getPortalAdmin():Promise<PortalUser|null>{
  const token=(await cookies()).get(SESSION_COOKIE)?.value;if(!token||!/^[a-f0-9]{64}$/.test(token))return null;
  const a:any=await env.DB!.prepare('SELECT a.*,p.owner_data_id FROM portal_sessions s JOIN portal_accounts a ON a.id=s.account_id CROSS JOIN portal_settings p WHERE s.token_hash=? AND s.expires_at>? AND a.active=1 AND p.id=1').bind(await tokenHash(token),Date.now()).first();

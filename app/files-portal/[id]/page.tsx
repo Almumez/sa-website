@@ -1,5 +1,5 @@
 import Portal from '../../portal';
-import {env} from 'cloudflare:workers';
+import {env} from '@/lib/server/env';
 import {cache} from 'react';
 import type {Metadata} from 'next';
 import type {Brand} from '../../branding';

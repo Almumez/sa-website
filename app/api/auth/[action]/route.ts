@@ -1,4 +1,4 @@
-import {env} from 'cloudflare:workers';
+import {env} from '@/lib/server/env';
 import {cookies} from 'next/headers';
 import {getPortalAdmin,bootstrapOwner,initialized,SESSION_COOKIE,tokenHash} from '../../../portal-access';
 import {authJSON as json,sameOrigin,accountInput,newSession,cookieHeader,loginLimit,safeReturn} from '../../../auth-utils';
@@ -11,7 +11,7 @@ export async function POST(request:Request,{params}:{params:Promise<{action:stri
  if(Number(request.headers.get('content-length')||0)>16384)return json({error:'بيانات كبيرة جدًا'},413);
  let d:any;try{d=await request.json();if(!d||typeof d!=='object')throw 0}catch{return json({error:'بيانات غير صالحة'},400)}
  if(action==='setup'){
-  const owner=await bootstrapOwner();if(!owner)return json({error:'إعداد المدير متاح لصاحب الموقع فقط'},403);
+  const owner=await bootstrapOwner(d.setupKey);if(!owner)return json({error:'إعداد المدير متاح لصاحب الموقع فقط'},403);
   if(await initialized())return json({error:'تم إعداد حساب المدير مسبقًا'},409);
   const v=accountInput(d);if(!v||!validPassword(d.password))return json({error:'تحقق من البيانات. كلمة المرور من 12 إلى 128 حرفًا واسم المستخدم 3 إلى 50 حرفًا إنجليزيًا أو رقمًا أو . _ -'},400);
   const id=crypto.randomUUID(),hash=await hashPassword(d.password);

@@ -1,4 +1,6 @@
-import {env} from 'cloudflare:workers';
+import {sameOrigin} from '@/app/auth-utils';
+import {resolveUpload} from '@/lib/server/uploads';
+import {env} from '@/lib/server/env';
 import {getPortalAdmin as getChatGPTUser} from '../../portal-access';
 import {validateFile,UploadError} from '../../uploaded-files';
 const fields=['title','document_number','unified_number','created','status','facility','cr','subscription','applicant','category'] as const;
@@ -11,10 +13,10 @@ export async function GET(request:Request){
 export async function POST(request:Request){
  const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
  if(!u.canAdd)return json({error:'ليس لديك صلاحية إضافة الملفات'},403);
- if(request.headers.get('origin')!==new URL(request.url).origin)return json({error:'طلب غير مسموح'},403);
+ if(!sameOrigin(request))return json({error:'طلب غير مسموح'},403);
  const length=Number(request.headers.get('content-length')||0);if(length>22*1024*1024)return json({error:'الحد الأقصى للملف 20 ميجابايت'},413);
  let data:FormData;try{data=await request.formData()}catch{return json({error:'تعذرت قراءة الملف'},400)}
- let upload:Awaited<ReturnType<typeof validateFile>>;try{upload=await validateFile(data.get('file'))}catch(e){if(e instanceof UploadError)return json({error:e.message},e.status);throw e}
+ let upload:Awaited<ReturnType<typeof validateFile>>;try{upload=data.get('uploadToken')?await resolveUpload(data.get('uploadToken'),u.ownerId):await validateFile(data.get('file'))}catch(e){if(e instanceof UploadError)return json({error:e.message},e.status);throw e}
  const values=fields.map(f=>String(data.get(f)||'').trim());
  if(!values[0]||values[0].length>200||values.some(v=>v.length>500))return json({error:'أدخل عنوانًا صالحًا وبيانات لا تتجاوز 500 حرف'},400);
  if(!values[3])values[3]=new Date().toISOString().slice(0,10);
