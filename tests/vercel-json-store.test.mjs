@@ -70,3 +70,18 @@ test('Vercel Blob JSON transaction retries sustained ETag contention',async()=>{
   await resilient.transaction(data=>{data.portal_login_limits[0].count++;});
   assert.equal((await store.read()).portal_login_limits[0].count,1);
 });
+
+test('Vercel Blob recovery snapshot failures do not block guarded state writes',async()=>{
+  const blob=memoryBlob(),base=createVercelJsonStore(blob);
+  await base.transaction(data=>data.portal_login_limits.push({key:'counter',window:1,count:0}));
+  const client={
+    get:(...args)=>blob.get(...args),
+    put:(pathname,...args)=>{
+      if(pathname.startsWith('portal/recovery/'))throw new Error('simulated recovery storage failure');
+      return blob.put(pathname,...args);
+    },
+  };
+  const store=createVercelJsonStore(client);
+  await store.transaction(data=>{data.portal_login_limits[0].count++;});
+  assert.equal((await base.read()).portal_login_limits[0].count,1);
+});
