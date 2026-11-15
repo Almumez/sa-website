@@ -4,7 +4,7 @@ import {getPortalAdmin,bootstrapOwner,initialized,SESSION_COOKIE,tokenHash} from
 import {authJSON as json,sameOrigin,accountInput,newSession,cookieHeader,loginLimit,safeReturn} from '../../../auth-utils';
 import {hashPassword,verifyPassword,validPassword} from '../../../passwords';
 export async function GET(_r:Request,{params}:{params:Promise<{action:string}>}){if((await params).action!=='me')return json({error:'غير موجود'},404);const user=await getPortalAdmin();return user?json({user}):json({error:'يرجى تسجيل الدخول'},401)}
-export async function POST(request:Request,{params}:{params:Promise<{action:string}>}){
+async function handlePost(request:Request,{params}:{params:Promise<{action:string}>}){
  if(!sameOrigin(request))return json({error:'طلب غير مسموح'},403);
  const {action}=await params;
  if(action==='logout'){const token=(await cookies()).get(SESSION_COOKIE)?.value;if(token){const hash=await tokenHash(token);await store.transaction(data=>{data.portal_sessions=data.portal_sessions.filter(row=>row.token_hash!==hash);});}return new Response(null,{status:303,headers:{Location:'/login','Set-Cookie':cookieHeader('',request,0),'Cache-Control':'no-store'}})}
@@ -41,4 +41,13 @@ export async function POST(request:Request,{params}:{params:Promise<{action:stri
   const token=await newSession(u.userId);return new Response(JSON.stringify({ok:true}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':cookieHeader(token,request)}});
  }
  return json({error:'غير موجود'},404);
+}
+export async function POST(request:Request,context:{params:Promise<{action:string}>}){
+ try{return await handlePost(request,context)}
+ catch(error){
+  console.error('Authentication API failed:',error);
+  const message=error instanceof Error?error.message:'';
+  const known=message.includes('Persistent storage is not connected')||message.includes('JSON storage is busy')||message.includes('JSON data is invalid')||message.includes('Main JSON file is missing')||message.includes('Unable to read private Blob');
+  return json({error:known?message:'تعذر إكمال طلب المصادقة بسبب مشكلة في الخادم أو التخزين. راجع سجلات Vercel.'},known?503:500);
+ }
 }
