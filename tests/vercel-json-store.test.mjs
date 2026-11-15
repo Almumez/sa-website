@@ -54,3 +54,19 @@ test('Vercel Blob JSON recovery snapshots are immutable and deduplicated',async(
   assert.deepEqual(recovered.portal_sessions,[]);
   assert.deepEqual(recovered.portal_login_limits,[]);
 });
+
+test('Vercel Blob JSON transaction retries sustained ETag contention',async()=>{
+  const blob=memoryBlob(),store=createVercelJsonStore(blob);
+  await store.transaction(data=>data.portal_login_limits.push({key:'counter',window:1,count:0}));
+  let conflicts=45;
+  const busyClient={
+    get:(...args)=>blob.get(...args),
+    put:(...args)=>{
+      if(args[0]==='portal/state.json'&&conflicts-->0)throw new BlobPreconditionFailedError();
+      return blob.put(...args);
+    },
+  };
+  const resilient=createVercelJsonStore(busyClient);
+  await resilient.transaction(data=>{data.portal_login_limits[0].count++;});
+  assert.equal((await store.read()).portal_login_limits[0].count,1);
+});
