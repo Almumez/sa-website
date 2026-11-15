@@ -18,14 +18,16 @@
     "data:init": "node --env-file-if-exists=.env.local scripts/init-json.mjs",
     "data:import": "node --env-file-if-exists=.env.local scripts/import-legacy.mjs",
     "data:backup": "node --env-file-if-exists=.env.local scripts/backup-json.mjs",
+    "data:migrate-blob": "node --env-file-if-exists=.env.local scripts/migrate-json-to-vercel-blob.mjs",
     "data:unlock": "node --env-file-if-exists=.env.local scripts/recover-json-lock.mjs",
-    "test": "node --test tests/json-store.test.mjs tests/local-app.test.mjs"
+    "test": "node --test tests/json-store.test.mjs tests/vercel-json-store.test.mjs tests/local-app.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@hookform/resolvers": "^5.7.1",
     "@noble/hashes": "^2.4.0",
     "@shadcn/react": "^0.3.0",
+    "@vercel/blob": "^2.9.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "^1.1.1",
@@ -45,11 +47,11 @@
     "react-hook-form": "^7.85.0",
     "react-resizable-panels": "^4.12.2",
     "recharts": "^3.8.0",
+    "server-only": "0.0.1",
     "sonner": "^2.0.8",
     "tailwind-merge": "3.6.0",
     "vaul": "^1.1.2",
-    "zod": "^3.25.76",
-    "server-only": "0.0.1"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

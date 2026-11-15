@@ -16,15 +16,28 @@ export async function POST(request:Request){
  if(!u.canAdd)return json({error:'ليس لديك صلاحية إضافة الملفات'},403);
  if(!sameOrigin(request))return json({error:'طلب غير مسموح'},403);
  const length=Number(request.headers.get('content-length')||0);if(length>22*1024*1024)return json({error:'الحد الأقصى للملف 20 ميجابايت'},413);
- let data:FormData;try{data=await request.formData()}catch{return json({error:'تعذرت قراءة الملف'},400)}
- let upload:Awaited<ReturnType<typeof validateFile>>;try{upload=await validateFile(data.get('file'))}catch(e){if(e instanceof UploadError)return json({error:e.message},e.status);throw e}
- const values=fields.map(f=>String(data.get(f)||'').trim());
- if(!values[0]||values[0].length>200||values.some(v=>v.length>500))return json({error:'أدخل عنوانًا صالحًا وبيانات لا تتجاوز 500 حرف'},400);
+ let data:FormData|Record<string,unknown>,upload:Awaited<ReturnType<typeof validateFile>>;
+ let uploadedKey:string|null=null;
+ try{
+  if(request.headers.get('content-type')?.includes('application/json')){
+   const body=await request.json() as Record<string,unknown>;
+   uploadedKey=typeof body.objectKey==='string'?body.objectKey:null;
+   if(!uploadedKey||!uploadedKey.startsWith(`${u.ownerId}/`)||! /^[0-9a-f-]{36}$/i.test(uploadedKey.slice(u.ownerId.length+1)))return json({error:'الملف المرفوع غير صالح'},400);
+   const object=await bucket.get(uploadedKey);if(!object)return json({error:'انتهت صلاحية رفع الملف. أعد رفعه.'},400);
+   const bytes=object.body instanceof Uint8Array?object.body:new Uint8Array(await new Response(object.body).arrayBuffer());
+   upload=await validateFile(new File([Buffer.from(bytes)],String(body.filename||''),{type:'application/octet-stream'}));
+   data=body;
+  }else{
+   const form=await request.formData();upload=await validateFile(form.get('file'));data=form;
+  }
+ }catch(e){if(uploadedKey)await bucket.delete(uploadedKey);if(e instanceof UploadError)return json({error:e.message},e.status);return json({error:'تعذرت قراءة الملف المرفوع'},400)}
+ const values=fields.map(f=>String(data instanceof FormData?data.get(f)||'':data[f]||'').trim());
+ if(!values[0]||values[0].length>200||values.some(v=>v.length>500)){if(uploadedKey)await bucket.delete(uploadedKey);return json({error:'أدخل عنوانًا صالحًا وبيانات لا تتجاوز 500 حرف'},400)}
  if(!values[3])values[3]=new Date().toISOString().slice(0,10);
- if(!/^\d{4}-\d{2}-\d{2}$/.test(values[3])||!['سارية','منتهية','ملغية'].includes(values[4]))return json({error:'تاريخ أو حالة غير صالحة'},400);
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(values[3])||!['سارية','منتهية','ملغية'].includes(values[4])){if(uploadedKey)await bucket.delete(uploadedKey);return json({error:'تاريخ أو حالة غير صالحة'},400)}
  const id=crypto.randomUUID();if(!values[1])values[1]=`DOC-${Date.now().toString().slice(-8)}`;
- if(!values[9])values[9]='عام';const key=`${u.ownerId}/${id}`;
- await bucket.put(key,upload.bytes);
+ if(!values[9])values[9]='عام';const key=uploadedKey||`${u.ownerId}/${id}`;
+ if(!uploadedKey)await bucket.put(key,upload.bytes);
  const document={id,slug:null,owner:u.ownerId,filename:upload.filename,mime:upload.mime,size:upload.size,object_key:key,...Object.fromEntries(fields.map((field,index)=>[field,values[index]])),uploaded_at:new Date().toISOString(),deleted:0} as DocumentRecord;
  try{await store.transaction(data=>{data.documents.push(document);});}catch(error){await bucket.delete(key);throw error;}
  return json({id},201);
