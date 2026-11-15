@@ -1,13 +1,12 @@
 import {store} from '@/lib/server/repository';
-import {cookies} from 'next/headers';
-import {getPortalAdmin,bootstrapOwner,initialized,SESSION_COOKIE,tokenHash} from '../../../portal-access';
+import {getPortalAdmin,bootstrapOwner,initialized} from '../../../portal-access';
 import {authJSON as json,sameOrigin,accountInput,newSession,cookieHeader,loginLimit,safeReturn} from '../../../auth-utils';
 import {hashPassword,verifyPassword,validPassword} from '../../../passwords';
 export async function GET(_r:Request,{params}:{params:Promise<{action:string}>}){if((await params).action!=='me')return json({error:'غير موجود'},404);const user=await getPortalAdmin();return user?json({user}):json({error:'يرجى تسجيل الدخول'},401)}
 async function handlePost(request:Request,{params}:{params:Promise<{action:string}>}){
  if(!sameOrigin(request))return json({error:'طلب غير مسموح'},403);
  const {action}=await params;
- if(action==='logout'){const token=(await cookies()).get(SESSION_COOKIE)?.value;if(token){const hash=await tokenHash(token);await store.transaction(data=>{data.portal_sessions=data.portal_sessions.filter(row=>row.token_hash!==hash);});}return new Response(null,{status:303,headers:{Location:'/login','Set-Cookie':cookieHeader('',request,0),'Cache-Control':'no-store'}})}
+ if(action==='logout')return new Response(null,{status:303,headers:{Location:'/login','Set-Cookie':cookieHeader('',request,0),'Cache-Control':'no-store'}});
  if(Number(request.headers.get('content-length')||0)>16384)return json({error:'بيانات كبيرة جدًا'},413);
  let d:any;try{d=await request.json();if(!d||typeof d!=='object')throw 0}catch{return json({error:'بيانات غير صالحة'},400)}
  if(action==='setup'){

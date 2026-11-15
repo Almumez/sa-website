@@ -110,7 +110,8 @@ test('local JSON production app: permissions, 5 MB files, aliases, concurrent ed
     const changed=await request('/api/auth/password',{method:'POST',cookie,data:{currentPassword:account.password,password:account.password+'changed'}});assert.equal(changed.status,200,changed.text);
     assert.equal((await request('/api/auth/me',{cookie})).status,401);
     assert.equal((await request('/api/auth/me',{cookie:changed.cookie})).status,200);
-    assert.equal((await request('/api/auth/logout',{method:'POST',cookie:changed.cookie})).status,303);
-    assert.equal((await request('/api/auth/me',{cookie:changed.cookie})).status,401);
+    const logout=await request('/api/auth/logout',{method:'POST',cookie:changed.cookie});assert.equal(logout.status,303);
+    assert.match(logout.headers.get('set-cookie'),/portal_session=;.*Max-Age=0/);
+    assert.equal((await request('/api/auth/me')).status,401);
   }finally{await stop();assert.ok(path.resolve(directory).startsWith(path.resolve(os.tmpdir())+path.sep));await rm(directory,{recursive:true,force:true});}
 });
