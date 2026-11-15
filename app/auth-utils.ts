@@ -4,12 +4,14 @@ export const authJSON=(data:unknown,status=200)=>Response.json(data,{status,head
 export function sameOrigin(r:Request){
  const origin=r.headers.get('origin');if(!origin)return false;
  try{
-  const requestURL=new URL(r.url),host=r.headers.get('host')||requestURL.host;
-  // On Vercel, requests may use the production alias or a deployment preview
-  // hostname. Compare against the actual request host instead of a fixed
-  // APP_ORIGIN, which can reject legitimate same-origin form submissions.
-  const proto=process.env.VERCEL?'https:':requestURL.protocol;
-  return new URL(origin).origin===`${proto}//${host}`;
+  const requestURL=new URL(r.url),originURL=new URL(origin);
+  // Proxies can rewrite Host while preserving the public hostname in
+  // x-forwarded-host. Next's request URL is also based on the public request.
+  const forwardedHost=r.headers.get('x-forwarded-host')?.split(',')[0].trim();
+  const host=(forwardedHost||r.headers.get('host')||requestURL.host).toLowerCase();
+  const forwardedProto=r.headers.get('x-forwarded-proto')?.split(',')[0].trim();
+  const protocol=forwardedProto||(process.env.VERCEL?'https':requestURL.protocol.replace(':',''));
+  return originURL.host.toLowerCase()===host&&originURL.protocol===`${protocol}:`;
  }catch{return false;}
 }
 export function safeReturn(value:unknown){if(typeof value!=='string')return '/';try{const u=new URL(value,'https://portal.local');return value.startsWith('/')&&u.origin==='https://portal.local'&&(u.pathname==='/'||u.pathname==='/admin'||u.pathname.startsWith('/admin/'))?u.pathname+u.search:'/'}catch{return '/'}}

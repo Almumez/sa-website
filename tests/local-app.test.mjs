@@ -45,6 +45,11 @@ test('local JSON production app: permissions, 5 MB files, aliases, concurrent ed
     const setups=await Promise.all([1,2].map(()=>request('/api/auth/setup',{method:'POST',data:{...account,setupKey:env.ADMIN_SETUP_SECRET}})));
     assert.deepEqual(setups.map(s=>s.status).sort(),[200,409]);const cookie=setups.find(s=>s.status===200).cookie;
     assert.ok(cookie);
+    // Reverse proxies may add the public host/protocol. A same-origin login
+    // must work and an external Origin must continue to be rejected.
+    const proxiedLogin=await request('/api/auth/login',{method:'POST',data:{identifier:account.username,password:account.password},headers:{'x-forwarded-host':new URL(base).host,'x-forwarded-proto':'http'}});
+    assert.equal(proxiedLogin.status,200,proxiedLogin.text);
+    assert.equal((await request('/api/auth/login',{method:'POST',data:{identifier:account.username,password:account.password},headers:{Origin:'https://attacker.test'}})).status,403);
     assert.equal((await request('/api/documents',{method:'POST',cookie,body:fileForm(Buffer.from('%PDF-1.7\n')),headers:{Origin:'https://attacker.test'}})).status,403);
     const bytes=Buffer.alloc(5*1024*1024,65);bytes.write('%PDF-1.7\n');
     const saved=await request('/api/documents',{method:'POST',cookie,body:fileForm(bytes,'Large file')});assert.equal(saved.status,201,saved.text);
