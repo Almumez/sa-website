@@ -45,6 +45,8 @@ test('local JSON production app: permissions, 5 MB files, aliases, concurrent ed
     const setups=await Promise.all([1,2].map(()=>request('/api/auth/setup',{method:'POST',data:{...account,setupKey:env.ADMIN_SETUP_SECRET}})));
     assert.deepEqual(setups.map(s=>s.status).sort(),[200,409]);const cookie=setups.find(s=>s.status===200).cookie;
     assert.ok(cookie);
+    assert.equal((await request('/api/auth/login',{method:'POST',data:{identifier:'missing-user',password:'invalid-password'}})).status,401);
+    assert.deepEqual(JSON.parse(await readFile(path.join(directory,'portal.json'),'utf8')).portal_login_limits,[],'login throttling must not write to the shared JSON store');
     // Reverse proxies may add the public host/protocol. A same-origin login
     // must work and an external Origin must continue to be rejected.
     const proxiedLogin=await request('/api/auth/login',{method:'POST',data:{identifier:account.username,password:account.password},headers:{'x-forwarded-host':new URL(base).host,'x-forwarded-proto':'http'}});

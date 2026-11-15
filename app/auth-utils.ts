@@ -1,5 +1,6 @@
 import {store} from '@/lib/server/repository';
 import {SESSION_COOKIE,tokenHash} from './portal-access';
+const loginWindows=new Map<string,{window:number,count:number}>();
 export const authJSON=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export function sameOrigin(r:Request){
  const origin=r.headers.get('origin');if(!origin)return false;
@@ -25,9 +26,15 @@ export async function newSession(accountId:string){
 }
 export async function loginLimit(request:Request,identifier:string){
  const ip=(process.env.TRUST_PROXY==='true'?request.headers.get('x-forwarded-for')?.split(',')[0].trim():null)||'local';
- const keys=await Promise.all(['ip:'+ip,'user:'+identifier].map(tokenHash)),window=Math.floor(Date.now()/900000);
- return store.transaction(data=>{
-  data.portal_login_limits=data.portal_login_limits.filter(row=>row.window>=window-1);
-  return keys.map((key,index)=>{let row=data.portal_login_limits.find(row=>row.key===key);if(!row){row={key,window,count:0};data.portal_login_limits.push(row);}if(row.window!==window){row.window=window;row.count=0;}row.count++;return row.count<=(index===0?40:10);}).every(Boolean);
- });
+ // Vercel functions are stateless and a JSON file in Blob is not a suitable
+ // shared rate-limit counter: every login would contend on the main state ETag.
+ // Keep a bounded per-instance window so normal authentication needs no write.
+ const window=Math.floor(Date.now()/900000),keys=['ip:'+ip,'user:'+identifier];
+ if(loginWindows.size>5000)for(const [key,row] of loginWindows)if(row.window<window-1)loginWindows.delete(key);
+ return keys.map((key,index)=>{
+  let row=loginWindows.get(key);
+  if(!row||row.window!==window){row={window,count:0};loginWindows.set(key,row);}
+  row.count++;
+  return row.count<=(index===0?40:10);
+ }).every(Boolean);
 }
