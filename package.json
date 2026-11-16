@@ -20,7 +20,7 @@
     "data:backup": "node --env-file-if-exists=.env.local scripts/backup-json.mjs",
     "data:migrate-blob": "node --env-file-if-exists=.env.local scripts/migrate-json-to-vercel-blob.mjs",
     "data:unlock": "node --env-file-if-exists=.env.local scripts/recover-json-lock.mjs",
-    "test": "node --test tests/json-store.test.mjs tests/vercel-json-store.test.mjs tests/local-app.test.mjs"
+    "test": "node --test tests/json-store.test.mjs tests/vercel-json-store.test.mjs tests/r2-json-store.test.mjs tests/local-app.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1169.0",
