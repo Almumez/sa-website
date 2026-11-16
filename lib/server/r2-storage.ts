@@ -7,8 +7,9 @@ const accountId=process.env.R2_ACCOUNT_ID;
 const bucketName=process.env.R2_BUCKET_NAME;
 const accessKeyId=process.env.R2_ACCESS_KEY_ID;
 const secretAccessKey=process.env.R2_SECRET_ACCESS_KEY;
+const endpoint=process.env.R2_ENDPOINT||`https://${accountId}.r2.cloudflarestorage.com`;
 export const r2Configured=Boolean(accountId&&bucketName&&accessKeyId&&secretAccessKey);
-const client=r2Configured?new S3Client({region:'auto',endpoint:`https://${accountId}.r2.cloudflarestorage.com`,credentials:{accessKeyId:accessKeyId!,secretAccessKey:secretAccessKey!}}):null;
+const client=r2Configured?new S3Client({region:'auto',endpoint,forcePathStyle:true,credentials:{accessKeyId:accessKeyId!,secretAccessKey:secretAccessKey!}}):null;
 
 function s3(){if(!client||!bucketName)throw new Error('Cloudflare R2 is not configured.');return {client,bucket:bucketName};}
 function notFound(error:unknown){const value=error as {$metadata?:{httpStatusCode?:number};name?:string};return value?.$metadata?.httpStatusCode===404||['NotFound','NoSuchKey','NoSuchBucket'].includes(value?.name||'');}
