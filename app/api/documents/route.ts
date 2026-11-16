@@ -7,11 +7,12 @@ import {validateFile,UploadError} from '../../uploaded-files';
 const fields=['title','document_number','unified_number','created','status','facility','cr','subscription','applicant','category'] as const;
 function json(data:unknown,status=200){return Response.json(data,{status,headers:{'Cache-Control':'no-store'}})}
 export async function GET(request:Request){
- const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
+ try{const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
  const trash=new URL(request.url).searchParams.get('trash')==='1'?1:0;
  const rows=await listDocuments(u.ownerId,trash);return json({documents:rows.map(({owner:_owner,object_key:_key,...document})=>document)});
+ }catch(error){console.error('Document list failed:',error);return json({error:'تعذر تحميل الملفات. أعد المحاولة أو راجع سجلات Vercel.'},503)}
 }
-export async function POST(request:Request){
+async function handlePost(request:Request){
  const u=await getChatGPTUser();if(!u)return json({error:'يرجى تسجيل الدخول'},401);
  if(!u.canAdd)return json({error:'ليس لديك صلاحية إضافة الملفات'},403);
  if(!sameOrigin(request))return json({error:'طلب غير مسموح'},403);
@@ -39,6 +40,13 @@ export async function POST(request:Request){
  if(!values[9])values[9]='عام';const key=uploadedKey||`${u.ownerId}/${id}`;
  if(!uploadedKey)await bucket.put(key,upload.bytes);
  const document={id,slug:null,owner:u.ownerId,filename:upload.filename,mime:upload.mime,size:upload.size,object_key:key,...Object.fromEntries(fields.map((field,index)=>[field,values[index]])),uploaded_at:new Date().toISOString(),deleted:0} as DocumentRecord;
- try{await store.transaction(data=>{data.documents.push(document);});}catch(error){await bucket.delete(key);throw error;}
+ try{await store.transaction(data=>{data.documents.push(document);});}catch(error){try{await bucket.delete(key)}catch(cleanupError){console.error('Failed to remove an unreferenced uploaded blob:',cleanupError)}throw error;}
  return json({id},201);
+}
+export async function POST(request:Request){
+ try{return await handlePost(request)}catch(error){
+  console.error('Document upload failed:',error);
+  const busy=error instanceof Error&&error.message.includes('JSON storage is busy');
+  return json({error:busy?'التخزين مشغول حاليًا؛ أعد المحاولة بعد قليل.':'تعذر حفظ الملف أو بياناته. راجع سجلات Vercel إذا تكررت المشكلة.'},busy?503:500);
+ }
 }

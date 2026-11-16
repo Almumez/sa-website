@@ -13,7 +13,7 @@ const formatSize=(n:number)=>n>=1048576?`${(n/1048576).toFixed(1)} MB`:`${Math.m
 const documentPath=(d:Doc)=>`/files-portal/${encodeURIComponent(d.slug||d.id)}`;
 const date=(v:string)=>new Date(v).toLocaleDateString('ar-SA',{calendar:'gregory',year:'numeric',month:'short',day:'numeric'});
 function FileIcon({doc}:{doc?:Doc}){return <span className={`file-icon ${doc?.mime.startsWith('image/')?'image':''}`}>{doc?.mime.startsWith('image/')?<FileImage size={23}/>:<FileText size={23}/>}<small>{doc?.filename.split('.').pop()?.toUpperCase()||'FILE'}</small></span>}
-async function api(url:string,options?:RequestInit):Promise<any>{const r=await fetch(url,options);const data:any=await r.json();if(!r.ok)throw Object.assign(new Error(data.error||'تعذر إتمام العملية. حاول مرة أخرى.'),{status:r.status});return data;}
+async function api(url:string,options?:RequestInit):Promise<any>{const r=await fetch(url,options),text=await r.text();let data:any=null;try{data=text?JSON.parse(text):null}catch{}if(!r.ok)throw Object.assign(new Error(data?.error||`تعذر إتمام العملية (HTTP ${r.status}). راجع سجلات Vercel إذا تكررت المشكلة.`),{status:r.status});if(!data||typeof data!=='object')throw new Error('أعاد الخادم استجابة غير مكتملة. أعد المحاولة، وإذا تكررت راجع سجلات Vercel.');return data;}
 export default function Portal({admin=false,documentId,initialBrand,blobUploads=false}:{admin?:boolean,documentId?:string,initialBrand?:Brand,blobUploads?:boolean}){
  const brand=useBrand(documentId,initialBrand);
  const [access,setAccess]=useState<PortalUser|null>(null);useEffect(()=>{if(!documentId)fetch('/api/auth/me').then(r=>r.json()).then((d:any)=>setAccess(d.user||null)).catch(()=>setAccess(null))},[documentId]);
